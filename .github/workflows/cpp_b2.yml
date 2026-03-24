@@ -1,0 +1,171 @@
+name: C++ w/B2
+
+on:
+  push:
+    branches: ["main"]
+    paths: [".github/workflows/cpp_b2.yml", "cpp/**"]
+  pull_request:
+    branches: ["main"]
+    paths: [".github/workflows/cpp_b2.yml", "cpp/**"]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # debug:
+  #   runs-on: ubuntu-latest
+  #   name: Debug Information
+  #   steps:
+  #     - name: Information
+  #       run: |
+  #         set -x
+  #         uname -a
+  #         docker ps
+
+  cpp-matrix:
+    runs-on: ubuntu-latest
+    name: Generate Test Matrix
+    outputs:
+      matrix: ${{ steps.cpp-matrix.outputs.matrix }}
+    steps:
+      - name: Generate Test Matrix
+        uses: grafikrobot/cpp-actions/cpp-matrix@patch-1
+        id: cpp-matrix
+        with:
+          compilers: |
+            gcc >= 4.8
+            clang >= 3.9
+            msvc >= 14.0
+            apple-clang *
+            mingw *
+            clang-cl *
+          standards: ">=11"
+          max-standards: 6
+          latest-factors: |
+            gcc Asan TSan UBSan
+            clang BoundsSan IntSan
+          factors: |
+            gcc Shared
+            msvc Shared x86
+            mingw Shared
+          subrange-policy: |
+            msvc: one-per-minor
+          trace-commands: true
+
+  build:
+    needs: cpp-matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.cpp-matrix.outputs.matrix) }}
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runs-on }}
+    container: ${{ matrix.container }}
+
+    steps:
+      # GitHub Actions no longer support older containers.
+      # The workaround is to install our own Node.js for the actions.
+      - name: Patch Node
+        # The containers that need Node.js 24 will have volumes set up so that
+        # the Node.js 24 installation can go there.
+        if: ${{ matrix.container.volumes }}
+        run: |
+          set -x
+          apt-get update
+          apt-get install -y curl xz-utils musl
+          ln /lib/x86_64-linux-musl/libc.so /lib/libc.musl-x86_64.so.1
+          curl -LO https://unofficial-builds.nodejs.org/download/release/v24.14.0/node-v24.14.0-linux-x64-musl.tar.xz
+          ls -laF /
+          tar -xf node-v24.14.0-linux-x64-musl.tar.xz --strip-components 1 -C /node24
+          ldd -v /node24/bin/node
+          ldd -v /__e/node24/bin/node
+
+      - name: Setup C++ Compiler
+        uses: alandefreitas/cpp-actions/setup-cpp@master
+        id: setup-cpp
+        with:
+          compiler: ${{ matrix.compiler }}
+          version: ${{ matrix.version }}
+
+      - name: Install Packages
+        if: matrix.install != ''
+        uses: alandefreitas/cpp-actions/package-install@master
+        id: package-install
+        with:
+          apt-get: ${{ matrix.install }} unzip wget
+
+      - name: Setup B2
+        if: runner.os != 'Windows'
+        env:
+          B2_TOOLSET: ${{ matrix.b2-toolset }}
+          CXX_PATH: ${{ steps.setup-cpp.outputs.cxx || '' }}
+        shell: bash
+        run: |
+          set -e
+          cd $HOME
+          wget "https://github.com/bfgroup/b2/archive/release.zip" -O b2.zip
+          unzip b2.zip
+          cd b2-release
+          ./bootstrap.sh
+          ./b2 -d+2 install b2-install-layout=portable --prefix=/usr/local/bin
+          echo "using ${B2_TOOLSET} : : ${CXX_PATH} ;" > ${HOME}/user-config.jam
+
+      - name: Setup B2
+        if: runner.os == 'Windows'
+        env:
+          B2_TOOLSET: ${{ matrix.b2-toolset }}
+          CXX_PATH: ${{ steps.setup-cpp.outputs.cxx || '' }}
+        shell: cmd
+        run: |
+          cd %HOME%
+          git clone --branch=release --depth=1 https://github.com/bfgroup/b2.git 
+          cd b2
+          cmd.exe /c bootstrap.bat
+          .\b2.exe -d+2 install b2-install-layout=portable
+          echo "using %B2_TOOLSET% : : %CXX_PATH% ;" > %HOME%/user-config.jam
+
+      - name: Clone Library
+        uses: actions/checkout@master
+
+      - name: Test
+        if: runner.os != 'Windows'
+        env:
+          B2_ARGS: >-
+            ${{ matrix.b2-toolset && format('toolset={0}',matrix.b2-toolset) || '' }}
+            ${{ matrix.build_dir && format('--build-dir={0}',matrix.build_dir) || '' }}
+            ${{ matrix.address_model && format('address-model={0}',matrix.address_model) || '' }}
+            ${{ matrix.cxxstd && format('cxxstd={0}',matrix.cxxstd) || '' }}
+            ${{ matrix.build_type && format('variant={0}',matrix.build_type) || '' }}
+            ${{ matrix.extra_args || '' }}
+            ${{ matrix.threading && format('threading={0}',matrix.threading) || '' }}
+            ${{ matrix.asan == true && 'address-sanitizer=on' || '' }}
+            ${{ matrix.ubsan == true && 'undefined-sanitizer=on' || '' }}
+            ${{ matrix.tsan == true && 'thread-sanitizer=on' || '' }}
+            ${{ matrix.shared == true && 'link=shared' || 'link=static' }}
+            ${{ matrix.runtime_link == true && 'runtime-link=shared' || 'link=static' }}
+        shell: bash
+        run: |
+          set -e
+          cd cpp
+          b2 -d+2 --debug-configuration ${B2_ARGS} test
+
+      - name: Test
+        if: runner.os == 'Windows'
+        env:
+          B2_ARGS: >-
+            ${{ matrix.b2-toolset && format('toolset={0}',matrix.b2-toolset) || '' }}
+            ${{ matrix.build_dir && format('--build-dir={0}',matrix.build_dir) || '' }}
+            ${{ matrix.address_model && format('address-model={0}',matrix.address_model) || '' }}
+            ${{ matrix.cxxstd && format('cxxstd={0}',matrix.cxxstd) || '' }}
+            ${{ matrix.build_type && format('variant={0}',matrix.build_type) || '' }}
+            ${{ matrix.extra_args || '' }}
+            ${{ matrix.threading && format('threading={0}',matrix.threading) || '' }}
+            ${{ matrix.asan == true && 'address-sanitizer=on' || '' }}
+            ${{ matrix.ubsan == true && 'undefined-sanitizer=on' || '' }}
+            ${{ matrix.tsan == true && 'thread-sanitizer=on' || '' }}
+            ${{ matrix.shared == true && 'link=shared' || 'link=static' }}
+            ${{ matrix.runtime_link == true && 'runtime-link=shared' || 'link=static' }}
+        shell: cmd
+        run: |
+          cd cpp
+          C:\b2\b2.exe -d+2 --debug-configuration %B2_ARGS% test
