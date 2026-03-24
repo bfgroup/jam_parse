@@ -39,7 +39,9 @@ struct cursor
 	{ \
 		name##_index = (__LINE__ - zero_line - 1), \
 		name = std::uint64_t(1) << name##_index \
-	}
+	}; \
+	static_assert( \
+		name##_index < (8 * sizeof(std::uint64_t)), "Too many tokens.")
 
 struct token
 {
@@ -142,7 +144,6 @@ struct token
 		private:
 		std::uint64_t val;
 	};
-	static_assert(sizeof(value_t) == sizeof(std::uint64_t), "Too many tokens.");
 
 	string_view view;
 	cursor cursor_position;
@@ -182,7 +183,7 @@ class lexer
 	token advance_comment();
 };
 
-/*inline*/ token lexer::next(token::value_t expected)
+inline token lexer::next(token::value_t expected)
 {
 	token result;
 	// At the beginning of a line we want to capture any whitespace as an
