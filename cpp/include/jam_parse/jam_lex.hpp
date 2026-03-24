@@ -316,7 +316,8 @@ inline token lexer::advance_whitespace(token::value_t t)
 	while (position != input.end() && std::isspace(*(position))
 		&& (*position != '\n' || *position != '\r'))
 		advance(position, cursor);
-	if (*position == '\n' || *position == '\r') advance(position, cursor);
+	if (peek(position) == '\n' || peek(position) == '\r')
+		advance(position, cursor);
 	if (position == input_position) return {};
 	return make_value_to(position, cursor, t);
 }
@@ -325,6 +326,7 @@ inline token lexer::advance_str(const string_view::value_type * s,
 	token::value_t t,
 	bool (*tail_check)(string_view::value_type))
 {
+	if (s == nullptr || *s == '\0') return {};
 	auto position = input_position;
 	auto cursor = cursor_position;
 	while (position != input.end() && *s == *position)
@@ -369,6 +371,7 @@ inline token lexer::advance_value()
 		&& (inquote || (invarexpand > 0) || !std::isspace(peek(position))))
 	{
 		auto c = advance(position, cursor);
+		if (position == input.end()) break;
 		if (c == '"')
 			inquote = !inquote;
 		else if (c == '\\')
@@ -410,7 +413,8 @@ inline token lexer::advance_comment()
 		else
 		{
 			// #..EOL style comment.
-			for (auto c = peek(position); c != '\n'; c = peek(position))
+			for (auto c = peek(position); c != '\0' && c != '\n';
+				c = peek(position))
 				c = advance(position, cursor);
 			return make_value_to(position, cursor, token::value_t::comment);
 		}
