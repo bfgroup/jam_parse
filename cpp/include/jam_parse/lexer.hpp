@@ -2,8 +2,8 @@
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
-#ifndef JAM_LEX_HPP
-#define JAM_LEX_HPP
+#ifndef JAM_PARSE_LEXER_HPP
+#define JAM_PARSE_LEXER_HPP
 
 #include <cctype>
 #include <cstddef>
@@ -158,7 +158,6 @@ struct token
 class lexer
 {
 	public:
-
 	// construction, destruction, and assignment
 	explicit lexer(string_view input)
 		: input(input)

@@ -4,7 +4,7 @@
 
 #include <iostream>
 
-#include <jam_parse/jam_lex.hpp>
+#include <jam_parse/lexer.hpp>
 
 #include <boost/core/lightweight_test.hpp>
 
