@@ -158,10 +158,14 @@ struct token
 class lexer
 {
 	public:
+
+	// construction, destruction, and assignment
 	explicit lexer(string_view input)
 		: input(input)
 		, input_position(input.begin())
 	{}
+
+	// modifiers
 	token next(token::value_t expected = {});
 
 	private:
@@ -183,6 +187,10 @@ class lexer
 	token advance_comment();
 };
 
+/*
+Attempt to consume a token from the given expected token set. The token set is
+a bit-mask of the tokens we are allowed to consider valid at this point.
+*/
 inline token lexer::next(token::value_t expected)
 {
 	token result;
@@ -269,11 +277,22 @@ inline token lexer::next(token::value_t expected)
 	// Unrecognized returns unknown.
 	return result;
 }
+
+/*
+Returns the character at the position if the position is valid. Otherwise
+returns `0`.
+*/
 inline string_view::value_type lexer::peek(const string_view::iterator & p)
 {
 	return p != input.end() ? *p : '\0';
 }
 
+/*
+Advances the position `p` and the cursor `i` one "character" if the position is
+valid. Otherwise does not alter the position and cursor. Returns the current
+character, not the character it advanced to. If it did not advance returns `0`.
+This will skip and convert end-of-line sequences tyo a single `'\n'` character.
+*/
 inline string_view::value_type lexer::advance(
 	string_view::iterator & p, cursor & i)
 {
@@ -297,6 +316,10 @@ inline string_view::value_type lexer::advance(
 	return c;
 }
 
+/*
+Advances the lexer position and cursor to the given position and cursor and
+returns a token of the given type `t`.
+*/
 inline token lexer::make_value_to(
 	string_view::const_iterator p, cursor c, std::uint64_t t)
 {
@@ -309,19 +332,33 @@ inline token lexer::make_value_to(
 	return result;
 }
 
+/*
+Advances the lexer position and cursor past immediate whitespace but stopping
+at an end-of-line, which is included. Returns a token of the given type `t`
+if there is whitespace. Otherwise returns an unknown token.
+*/
 inline token lexer::advance_whitespace(token::value_t t)
 {
 	auto position = input_position;
 	auto cursor = cursor_position;
+	// Advance through whitespace until EOL.
 	while (position != input.end() && std::isspace(*(position))
 		&& (*position != '\n' || *position != '\r'))
 		advance(position, cursor);
+	// Also advance past the EOL.
 	if (peek(position) == '\n' || peek(position) == '\r')
 		advance(position, cursor);
+	// Return uknown token if we didn't find whitespace.
 	if (position == input_position) return {};
 	return make_value_to(position, cursor, t);
 }
 
+/*
+Advance the lexer position and cursor past a matching string `s`. Returns the
+token representing the advanced string if it matches. Otherwise returns the
+unknown token. Even if the string matches by itself, the `tail_check` for the
+past-the-end character also needs to pass for a full match.
+*/
 inline token lexer::advance_str(const string_view::value_type * s,
 	token::value_t t,
 	bool (*tail_check)(string_view::value_type))
@@ -334,12 +371,18 @@ inline token lexer::advance_str(const string_view::value_type * s,
 		advance(position, cursor);
 		s += 1;
 	}
+	// Check for valid parse and valid tail to return the token.
 	if (position != input_position && *s == '\0'
 		&& (position == input.end() || tail_check(*position)))
 		return make_value_to(position, cursor, t);
 	return {};
 }
 
+/*
+Advance the lexer position and cursor past the given operator `s`. Ihe operator
+can be any length. But must not be followed by any of the possible operator
+characters.
+*/
 inline token lexer::advance_op(
 	const string_view::value_type * s, token::value_t t)
 {
@@ -353,6 +396,10 @@ inline token lexer::advance_op(
 	});
 }
 
+/*
+Advance the lexer position and cursor past the given keyword `s`. The keyword
+must terminated by a non-alpha character (as Jam keywords are all lowercase).
+*/
 inline token lexer::advance_kw(
 	const string_view::value_type * s, token::value_t t)
 {
@@ -361,6 +408,13 @@ inline token lexer::advance_kw(
 	});
 }
 
+/*
+Advances the lexer position and cursor past a Jam value. Jam values are the
+catch-all for tokens. Jam values require special parsing to maintain correct
+scoping of quotes and parenthesis. As the values can be quoted strings,
+quoted strings with variable expansions in them, plain variable expansions,
+or regular strings.
+*/
 inline token lexer::advance_value()
 {
 	auto position = input_position;
@@ -390,6 +444,11 @@ inline token lexer::advance_value()
 	return make_value_to(position, cursor, token::value_t::value);
 }
 
+/*
+Advance the lexer position and cursor past a Jam comment. This is for both
+line and block comments. The comment markers are included in the resulting
+token. For block comments any EOLs in the block are also included.
+*/
 inline token lexer::advance_comment()
 {
 	auto position = input_position;
